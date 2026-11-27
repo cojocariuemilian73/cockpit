@@ -10,7 +10,10 @@ Un ecran de decizie pentru memecoins pe Solana, cu frână. Regulile tale (lichi
 npm install
 npm run dev    # http://localhost:5190
 npm test
+npm run deploy # publică pe GitHub Pages
 ```
+
+Live: https://cojocariuemilian73.github.io/cockpit/
 
 Arhitectura și schema de date: [ARHITECTURA.md](ARHITECTURA.md).
 
