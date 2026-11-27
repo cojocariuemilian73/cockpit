@@ -1,27 +1,43 @@
 import { useEffect, useRef, useState } from "react";
-import { Search, ScrollText, Wallet, Settings as Cog, Keyboard } from "lucide-react";
-import type { Chain, SessionView, Token } from "../domain/types";
+import { Search, ScrollText, Wallet, Settings as Cog, Keyboard, RotateCcw, Download, Upload, Maximize2, Minimize2 } from "lucide-react";
+import type { Chain, Mode, SessionView, Token } from "../domain/types";
 import { fmtDuration, fmtMetric, fmtUsd } from "../domain/rules";
-import { NATIVE, chainOfCa, market } from "../data/market";
+import { NATIVE, chainOfCa, marketData } from "../data/market";
+import type { DataStatus } from "../store/cockpit";
 
 export type DrawerTab = "reguli" | "portofel" | "setari";
 
 interface Props {
   chain: Chain;
   natives: Record<Chain, number>;
-  priorityFeeSol: number;
+  mode: Mode;
+  status: DataStatus;
+  liveTick: boolean;
+  focus: boolean;
   session: SessionView;
   now: number;
-  balanceUsd: number;
-  walletConnected: boolean;
+  cashUsd: number;
   drawer: DrawerTab | null;
   searchRef: React.RefObject<HTMLInputElement>;
   onChain: (c: Chain) => void;
   onPick: (t: Token) => void;
   onDrawer: (t: DrawerTab) => void;
+  onMode: (m: Mode) => void;
+  onLiveTick: (on: boolean) => void;
+  onFocus: () => void;
+  onReset: () => void;
+  onExport: () => void;
+  onImport: (text: string) => void;
   onWallet: () => void;
   onHelp: () => void;
 }
+
+const STATUS: Record<DataStatus, [string, string]> = {
+  simulat: ["Simulat", "Token demo: prețuri simulate determinist, din seed."],
+  live: ["Live", "Prețuri reale de la DexScreener, la 5 s. Execuția rămâne pe hârtie."],
+  pauza: ["Pauză", "Live Tick e oprit: prețurile stau pe loc, iar datele îmbătrânesc."],
+  fallback: ["Fallback", "Sursa live nu răspunde acum. Ultimul preț cunoscut; reîncerc la 5 s."],
+};
 
 function age(min?: number) {
   if (min === undefined) return "—";
@@ -43,7 +59,7 @@ function TokenSearch({ chain, inputRef, onPick, onChain }: { chain: Chain; input
     const id = ++seq.current;
     const h = window.setTimeout(async () => {
       try {
-        const r = await market.search(chain, text);
+        const r = await marketData.search(chain, text);
         if (id === seq.current) setResults(r);
       } catch { if (id === seq.current) setMsg("Căutarea nu răspunde acum."); }
     }, 300);
@@ -56,7 +72,7 @@ function TokenSearch({ chain, inputRef, onPick, onChain }: { chain: Chain; input
     if (c !== chain) onChain(c);
     setBusy(true);
     setMsg(null);
-    const { token, offline } = await market.lookup(c, text);
+    const { token, offline } = await marketData.lookup(c, text, Date.now());
     setBusy(false);
     if (!token) return setMsg(offline ? "Fără conexiune la date." : `Niciun pool pe ${NATIVE[c].label} pentru adresa asta.`);
     pick(token);
@@ -110,14 +126,25 @@ function TokenSearch({ chain, inputRef, onPick, onChain }: { chain: Chain; input
 
 export function Header(p: Props) {
   const s = p.session;
-  const native = NATIVE[p.chain];
-  const nativeUsd = p.natives[p.chain];
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [label, hint] = STATUS[p.status];
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (f) p.onImport(await f.text());
+  }
+
   return (
     <header className="hdr">
       <div className="logo">
         <span className="logo-mark" aria-hidden />
         <span className="logo-name">COCKPIT</span>
-        <span className="logo-sub">decizie cu frână</span>
+      </div>
+
+      <div className={`seg mode-seg mode-${p.mode}`} role="radiogroup" aria-label="Mod">
+        <button role="radio" aria-checked={p.mode === "demo"} onClick={() => p.onMode("demo")} title="Hârtie: 10 SOL simulați, prețuri reale sau demo">DEMO</button>
+        <button role="radio" aria-checked={p.mode === "live"} onClick={() => p.onMode("live")} title="Pregătit pentru wallet/RPC. Nu execută nimic real.">LIVE</button>
       </div>
 
       <div className="seg chain-seg" role="radiogroup" aria-label="Rețea">
@@ -128,40 +155,43 @@ export function Header(p: Props) {
 
       <TokenSearch chain={p.chain} inputRef={p.searchRef} onPick={p.onPick} onChain={p.onChain} />
 
-      <div className="gas num" title="Prețul monedei native și taxa de prioritate">
-        <span>{native.symbol} <b>{fmtUsd(nativeUsd)}</b></span>
-        <span className="sep">|</span>
-        <span>Prioritate <b>{p.priorityFeeSol} {native.symbol}</b></span>
-      </div>
+      <span className={`data-st data-${p.status}`} title={hint} role="status"><i aria-hidden />{label}</span>
+
+      <button role="switch" aria-checked={p.liveTick} className="tgl hdr-tgl" onClick={() => p.onLiveTick(!p.liveTick)} title="Live Tick: pornește sau oprește actualizarea prețurilor">
+        <i aria-hidden /> Live Tick
+      </button>
 
       <div className={`sess sess-${s.state}`} role="status" aria-live="polite" title="Limitele sesiunii, din regulile tale">
         <span className="sess-dot" aria-hidden />
         <span className="num">{s.tradesUsed}/{s.tradesMax ?? "∞"}</span>
         <span className="sess-sep" aria-hidden />
         <span className="num">risc {s.riskUsedPct.toLocaleString("ro-RO", { maximumFractionDigits: 1 })}/{s.riskMaxPct ?? "∞"}%</span>
-        <span className="sess-sep" aria-hidden />
-        <span>
+        <span className="sess-sep hide-md" aria-hidden />
+        <span className="hide-md">
           {s.state === "active" && "Activ"}
           {s.state === "cooldown" && <>Cooldown <span className="num">{fmtDuration((s.cooldownUntil ?? p.now) - p.now)}</span></>}
           {s.state === "limit" && "Oprit pe azi"}
         </span>
       </div>
 
-      <nav className="hdr-actions" aria-label="Panouri">
+      <nav className="hdr-actions" aria-label="Acțiuni">
+        <button className={`ibtn ${p.focus ? "on" : ""}`} onClick={p.onFocus} title="Focus: doar graficul și execuția (F)" aria-label="Focus" aria-pressed={p.focus}>
+          {p.focus ? <Minimize2 size={15} strokeWidth={1.75} /> : <Maximize2 size={15} strokeWidth={1.75} />}
+        </button>
+        <button className="ibtn" onClick={p.onReset} title="Reset Demo: 10 SOL, fără poziții. Se poate anula din notificare." aria-label="Reset Demo"><RotateCcw size={15} strokeWidth={1.75} /></button>
+        <button className="ibtn hide-sm" onClick={p.onExport} title="Exportă starea DEMO (JSON)" aria-label="Export JSON"><Download size={15} strokeWidth={1.75} /></button>
+        <button className="ibtn hide-sm" onClick={() => fileRef.current?.click()} title="Importă o stare exportată (JSON, validat strict)" aria-label="Import JSON"><Upload size={15} strokeWidth={1.75} /></button>
+        <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={onFile} />
+        <span className="hdr-sep" aria-hidden />
         <button className={`ibtn ${p.drawer === "reguli" ? "on" : ""}`} onClick={() => p.onDrawer("reguli")} title="Reguli (R)" aria-label="Reguli"><ScrollText size={15} strokeWidth={1.75} /></button>
         <button className={`ibtn ${p.drawer === "portofel" ? "on" : ""}`} onClick={() => p.onDrawer("portofel")} title="Portofel și statistici (P)" aria-label="Portofel și statistici"><Wallet size={15} strokeWidth={1.75} /></button>
         <button className={`ibtn ${p.drawer === "setari" ? "on" : ""}`} onClick={() => p.onDrawer("setari")} title="Setări (S)" aria-label="Setări"><Cog size={15} strokeWidth={1.75} /></button>
         <button className="ibtn hide-md" onClick={p.onHelp} title="Scurtături (?)" aria-label="Scurtături"><Keyboard size={15} strokeWidth={1.75} /></button>
       </nav>
 
-      <button className={`wallet-btn ${p.walletConnected ? "on" : ""}`} onClick={p.onWallet}>
-        {p.walletConnected ? (
-          <>
-            <span className="wallet-dot" aria-hidden />
-            <span className="num">{(p.balanceUsd / nativeUsd).toLocaleString("ro-RO", { maximumFractionDigits: 2 })} {native.symbol}</span>
-            <span className="wallet-tag">hârtie</span>
-          </>
-        ) : "Connect Wallet"}
+      <button className={`wallet-btn mode-${p.mode}`} onClick={p.onWallet} title={`Numerar DEMO ${fmtUsd(p.cashUsd)}`}>
+        <span className="num">{(p.cashUsd / p.natives.solana).toLocaleString("ro-RO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SOL</span>
+        <span className="wallet-tag">{p.mode === "demo" ? "DEMO" : "LIVE · pregătit"}</span>
       </button>
     </header>
   );

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Copy, Check as CheckIcon, ExternalLink } from "lucide-react";
+import { Copy, Check as CheckIcon, ExternalLink, Star } from "lucide-react";
 import type { Token } from "../domain/types";
 import { fmtMetric } from "../domain/rules";
 
@@ -32,7 +32,7 @@ function Badge({ ok, label, title }: { ok: boolean | undefined; label: string | 
 
 const money = (v?: number) => (v === undefined ? "—" : fmtMetric("liquidityUsd", v).replace(" ", ""));
 
-export function TokenStrip({ token }: { token: Token }) {
+export function TokenStrip({ token, starred, onStar }: { token: Token; starred: boolean; onStar: () => void }) {
   const [copied, setCopied] = useState(false);
   async function copy() {
     try {
@@ -47,7 +47,10 @@ export function TokenStrip({ token }: { token: Token }) {
     <div className="strip">
       <TokenLogo token={token} size={30} />
       <div className="strip-id">
-        <div className="strip-name"><b>{token.symbol}</b><span className="dim ell">{token.name}</span></div>
+        <div className="strip-name">
+          <b>{token.symbol}</b><span className="dim ell">{token.name}</span>
+          <button className={`star ${starred ? "on" : ""}`} onClick={onStar} aria-pressed={starred} aria-label={starred ? "Scoate din Watchlist" : "Adaugă în Watchlist"}><Star size={13} strokeWidth={1.9} /></button>
+        </div>
         <button className={`ca ${copied ? "copied" : ""}`} onClick={copy} title="Copiază adresa contractului">
           <span className="num">{token.ca.slice(0, 5)}…{token.ca.slice(-4)}</span>
           {copied ? <><CheckIcon size={11} strokeWidth={2.5} /> copiat</> : <Copy size={11} strokeWidth={2} />}

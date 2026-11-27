@@ -3,7 +3,7 @@
 // regulile scrise de utilizator controlează direct ce se vede.
 
 import type {
-  BuyGate, Check, ExitRule, Flag, Metric, MetricRule, Rule, SessionRule,
+  Check, ExitRule, Flag, Metric, MetricRule, Rule, SessionRule,
   SessionView, Token, Trade,
 } from "./types";
 
@@ -85,7 +85,7 @@ function sessionRule(rules: Rule[], type: SessionRule["type"]): SessionRule | un
 /** Riscul unui trade: pierderea realizată dacă e închis, altfel cât poate pierde până la stop. */
 export function tradeRiskUsd(t: Trade): number {
   if (t.closedAt !== undefined) return Math.max(0, -(t.pnlUsd ?? 0));
-  if (t.tpHit) return 0; // stop la intrare: riscul rămas e ~0
+  if (t.tpHit || t.recovered) return 0; // stop la intrare: riscul rămas e ~0
   return t.sizeUsd * (t.slPct / 100);
 }
 
@@ -104,7 +104,7 @@ export function evaluateSession(rules: Rule[], trades: Trade[], bankrollUsd: num
   const noSizeUp = sessionRule(rules, "noSizeUpAfterLoss");
   const minWords = sessionRule(rules, "minThesisWords");
 
-  const riskUsedPct = (today.reduce((s, t) => s + tradeRiskUsd(t), 0) / bankrollUsd) * 100;
+  const riskUsedPct = bankrollUsd > 0 ? (today.reduce((s, t) => s + tradeRiskUsd(t), 0) / bankrollUsd) * 100 : 0;
 
   let cooldownUntil: number | undefined;
   if (cooldown && lossStreak >= cooldown.value && closed.length) {
@@ -158,44 +158,6 @@ export function countWords(text: string): number {
   return text.trim().split(/\s+/).filter((w) => w.length > 1).length;
 }
 
-// ---------- Poarta de cumpărare ----------
-
-export function buyGate(args: {
-  token: Token | null;
-  checks: Check[];
-  session: SessionView;
-  bankrollUsd: number;
-  sizeUsd: number;
-  thesisText: string;
-  ack: boolean;
-  now: number;
-}): BuyGate {
-  const { token, checks, session, bankrollUsd, sizeUsd, thesisText, ack, now } = args;
-  const blockers: string[] = [];
-  const warnings: string[] = [];
-
-  if (!token) blockers.push("Alege un token.");
-  if (session.state === "cooldown" && session.cooldownUntil) {
-    blockers.push(`Cooldown încă ${fmtDuration(session.cooldownUntil - now)} după ${session.reason}.`);
-  }
-  if (session.state === "limit") blockers.push(`Sesiune închisă: ${session.reason}.`);
-
-  for (const c of checks) {
-    if (c.status === "fail") blockers.push(`${c.label} — are ${c.actual}.`);
-    else if (c.status === "warn") warnings.push(`${c.label} — are ${c.actual}.`);
-    else if (c.status === "unknown") warnings.push(`${c.label} — ${c.actual}.`);
-  }
-
-  const cap = sizeCeilingUsd(session, bankrollUsd);
-  if (sizeUsd > cap + 0.005) blockers.push(`Mărimea depășește plafonul de acum (${fmtUsd(cap)}).`);
-
-  const missing = session.minThesisWords - countWords(thesisText);
-  if (missing > 0) blockers.push(`Scrie de ce intri: încă ${missing} ${missing === 1 ? "cuvânt" : "cuvinte"}.`);
-
-  const needsAck = warnings.length > 0;
-  return { allowed: blockers.length === 0 && (!needsAck || ack), blockers, warnings, needsAck };
-}
-
 // ---------- Formatare ----------
 
 export function fmtUsd(v: number): string {
@@ -210,6 +172,7 @@ export function fmtDuration(ms: number): string {
 }
 
 export function fmtPct(v: number, signed = true): string {
+  if (!Number.isFinite(v)) return "—";
   const s = Math.abs(v).toLocaleString("ro-RO", { maximumFractionDigits: 1 });
   return signed ? `${v >= 0 ? "+" : "−"}${s}%` : `${s}%`;
 }

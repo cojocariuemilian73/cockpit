@@ -19,6 +19,12 @@ export const NATIVE: Record<Chain, { symbol: string; wrapped: string; label: str
 // ---------- cache + cozi ----------
 
 const cache = new Map<string, { at: number; data: unknown }>();
+const CACHE_MAX = 300;
+
+function remember(url: string, data: unknown) {
+  if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value as string);
+  cache.set(url, { at: Date.now(), data });
+}
 
 export class RateLimited extends Error {}
 
@@ -39,7 +45,7 @@ async function ds<T>(path: string, ttlMs = 4000): Promise<T> {
   const hit = cached<T>(url, ttlMs);
   if (hit) return hit;
   const data = (await getJson(url)) as T;
-  cache.set(url, { at: Date.now(), data });
+  remember(url, data);
   return data;
 }
 
@@ -59,7 +65,7 @@ function queue(gapMs: number) {
       nextAt = Date.now() + gapMs;
       try {
         const data = (await getJson(url)) as T;
-        cache.set(url, { at: Date.now(), data });
+        remember(url, data);
         return data;
       } catch (e) {
         if (e instanceof RateLimited) pausedUntil = Date.now() + 30_000;
@@ -89,7 +95,7 @@ interface DsPair {
   marketCap?: number;
   fdv?: number;
   pairCreatedAt?: number;
-  txns?: { h1?: { buys: number; sells: number } };
+  txns?: { m5?: { buys: number; sells: number }; h1?: { buys: number; sells: number } };
   volume?: { h1?: number };
   priceChange?: { m5?: number; h1?: number };
   info?: { imageUrl?: string; socials?: { type: string; url: string }[]; websites?: { url: string }[] };
@@ -114,9 +120,10 @@ function fromPair(p: DsPair): Token {
     chain: p.chainId as Chain,
     symbol: p.baseToken.symbol,
     name: p.baseToken.name,
-    priceUsd: Number(p.priceUsd ?? 0),
+    priceUsd: Number(p.priceUsd ?? 0) || 0,
     change1hPct: p.priceChange?.h1 ?? 0,
     change5mPct: p.priceChange?.m5,
+    txns5m: p.txns?.m5,
     metrics: {
       liquidityUsd: p.liquidity?.usd,
       mcapUsd: p.marketCap ?? p.fdv,
@@ -158,7 +165,7 @@ export async function searchLive(chain: Chain, q: string): Promise<Token[]> {
 }
 
 export interface LivePatch {
-  priceUsd: number; change1hPct: number; change5mPct?: number; volume1hUsd?: number; pairAddress?: string;
+  priceUsd: number; change1hPct: number; change5mPct?: number; volume1hUsd?: number; pairAddress?: string; txns5m?: Token["txns5m"];
   metrics: Token["metrics"]; socials?: Token["socials"]; imageUrl?: string;
 }
 
@@ -176,7 +183,7 @@ export async function refreshLive(tokens: { chain: Chain; ca: string; id: string
         if (!p) continue;
         const f = fromPair(p);
         out[t.id] = {
-          priceUsd: f.priceUsd, change1hPct: f.change1hPct, change5mPct: f.change5mPct, volume1hUsd: f.volume1hUsd,
+          priceUsd: f.priceUsd, change1hPct: f.change1hPct, change5mPct: f.change5mPct, volume1hUsd: f.volume1hUsd, txns5m: f.txns5m,
           pairAddress: f.pairAddress, metrics: f.metrics, socials: f.socials, imageUrl: f.imageUrl,
         };
       }
@@ -280,7 +287,7 @@ interface GtPool {
   attributes: {
     address: string; name: string; pool_created_at: string; base_token_price_usd: string;
     fdv_usd: string | null; market_cap_usd: string | null; reserve_in_usd: string;
-    price_change_percentage: { m5: string; h1: string }; transactions: { h1: { buys: number; sells: number } }; volume_usd: { h1: string };
+    price_change_percentage: { m5: string; h1: string }; transactions: { m5?: { buys: number; sells: number }; h1: { buys: number; sells: number } }; volume_usd: { h1: string };
   };
   relationships: { base_token: { data: { id: string } }; dex: { data: { id: string } } };
 }
@@ -303,9 +310,10 @@ export async function radarLive(chain: Chain, kind: RadarKind): Promise<Token[]>
     const n = tx.buys + tx.sells;
     const t: Token = {
       id: `${chain}:${b.address}`, ca: b.address, chain, symbol: b.symbol, name: b.name,
-      priceUsd: Number(a.base_token_price_usd), change1hPct: Number(a.price_change_percentage.h1), change5mPct: Number(a.price_change_percentage.m5),
+      priceUsd: Number(a.base_token_price_usd) || 0, change1hPct: Number(a.price_change_percentage.h1) || 0, change5mPct: Number(a.price_change_percentage.m5) || 0,
+      txns5m: a.transactions.m5,
       metrics: {
-        liquidityUsd: Number(a.reserve_in_usd),
+        liquidityUsd: Number(a.reserve_in_usd) || undefined,
         mcapUsd: Number(a.market_cap_usd ?? a.fdv_usd ?? 0) || undefined,
         ageMin: (Date.now() - Date.parse(a.pool_created_at)) / 60_000,
         buyRatioPct: n ? (tx.buys / n) * 100 : undefined,
@@ -313,7 +321,7 @@ export async function radarLive(chain: Chain, kind: RadarKind): Promise<Token[]>
       flags: {}, source: "live", updatedAt: Date.now(),
       pairAddress: a.address, dex: p.relationships.dex.data.id,
       imageUrl: b.image_url && !b.image_url.includes("missing") ? b.image_url : undefined,
-      volume1hUsd: Number(a.volume_usd.h1),
+      volume1hUsd: Number(a.volume_usd.h1) || 0,
     };
     return [t];
   });

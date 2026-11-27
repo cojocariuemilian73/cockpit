@@ -1,7 +1,8 @@
-import type { Rule, Settings } from "./types";
+import type { Preset, Rule, Settings } from "./types";
 import { DEFAULT_EXIT } from "./rules";
 
-export const DEFAULT_BANKROLL = 2000;
+/** Portofelul DEMO pornește cu atâția SOL. */
+export const DEMO_SOL = 10;
 
 export const DEFAULT_RULES: Rule[] = [
   // limite de sesiune
@@ -25,10 +26,25 @@ export const DEFAULT_RULES: Rule[] = [
   DEFAULT_EXIT,
 ];
 
+/** Presetările de execuție. Advanced păstrează valorile tale. */
+export const PRESETS: Record<Exclude<Preset, "advanced">, { label: string; slippageBps: number; priorityFeeSol: number; hint: string }> = {
+  turbo: { label: "Turbo", slippageBps: 300, priorityFeeSol: 0.005, hint: "alunecare 3%, prioritate mare: trece și când pool-ul se mișcă" },
+  normal: { label: "Normal", slippageBps: 100, priorityFeeSol: 0.001, hint: "alunecare 1%, prioritate obișnuită" },
+  safe: { label: "Safe", slippageBps: 50, priorityFeeSol: 0.0005, hint: "alunecare 0,5%: refuză pool-urile subțiri" },
+};
+
 export const DEFAULT_SETTINGS: Settings = {
+  preset: "normal",
   slippageBps: 100,
   priorityFeeSol: 0.001,
-  sizePresetsPct: [1, 2.5, 5],
+  spikePct: 50,
+  burstMax: 3,
+  burstWindowMin: 10,
+  tiltLosses: 3,
+  staleSec: 30,
+  requotePct: 3,
+  bigPositionPct: 20,
+  liveTick: true,
   notifications: false,
   orderTtlMin: 60,
 };

@@ -35,6 +35,8 @@ export interface Token {
   /** distribuția deținătorilor, în procente din supply */
   holdersDist?: { top10: number; r11_20: number; r21_40: number; rest: number };
   change5mPct?: number;
+  /** cumpărări și vânzări în ultimele 5 minute (tracțiunea) */
+  txns5m?: { buys: number; sells: number };
   socials?: { x?: string; telegram?: string; web?: string };
   /** raportul RugCheck (doar Solana) */
   rug?: { score: number; lpLockedPct?: number; risks: { name: string; level: string }[]; top10High: boolean };
@@ -129,7 +131,7 @@ export interface Thesis {
   tag: ThesisTag;
 }
 
-export type ExitReason = "tp" | "sl" | "breakeven" | "trailing" | "timp" | "manual";
+export type ExitReason = "tp" | "sl" | "breakeven" | "trailing" | "timp" | "manual" | "2x";
 
 export interface ExecConfig {
   /** comisionul platformei, transparent (monetizare); 0 în MVP */
@@ -139,14 +141,32 @@ export interface ExecConfig {
   priorityFeeUsd: number;
 }
 
+export type Preset = "turbo" | "normal" | "safe" | "advanced";
+
 export interface Settings {
+  preset: Preset;
   slippageBps: number;
   priorityFeeSol: number;
-  sizePresetsPct: number[];
+  /** de la ce creștere pe 5 minute mișcarea e „spike” */
+  spikePct: number;
+  /** Burst Cadence: atâtea intrări în fereastra de minute de mai jos pornesc frâna */
+  burstMax: number;
+  burstWindowMin: number;
+  /** Anti-Tilt: atâtea pierderi la rând */
+  tiltLosses: number;
+  /** datele mai vechi de atâtea secunde cer confirmare */
+  staleSec: number;
+  /** prețul mutat cu atâtea procente între previzualizare și execuție cere reconfirmare */
+  requotePct: number;
+  /** pozițiile peste acest procent din capital cer confirmare la Sell 100% */
+  bigPositionPct: number;
+  liveTick: boolean;
   notifications: boolean;
   /** ordinele limită expiră după atâtea minute */
   orderTtlMin: number;
 }
+
+export type Mode = "demo" | "live";
 
 export interface LimitOrder {
   id: string;
@@ -202,6 +222,14 @@ export interface Trade {
   checksAtEntry: Check[];
   acceptedWarnings: boolean;
   mode: "paper" | "live";
+  /** 2x Auto-Breakeven: la ≥ 2× intrarea vinde 50% și păstrează restul ca moonbag */
+  auto2x: boolean;
+  recovered?: { at: number; price: number; usd: number };
+  /** cum arăta mișcarea la intrare: baza lecțiilor „spike vs. tracțiune normală” */
+  entryMove: "spike" | "normal";
+  /** ce a semnalat frâna la intrare (fapte), dacă a semnalat ceva */
+  brakeReasons: string[];
+  note?: string;
 }
 
 // ---------- Rezultatul evaluării ----------
@@ -234,11 +262,29 @@ export interface SessionView {
   exit: ExitRule;
 }
 
-export interface BuyGate {
-  allowed: boolean;
-  /** de ce nu se poate apăsa, în limbaj simplu */
-  blockers: string[];
-  /** atenționări care cer bifă */
-  warnings: string[];
-  needsAck: boolean;
+
+// ---------- Starea durabilă ----------
+
+/** Tot ce se salvează, se exportă și se importă. Restul stării (confirmări, filtre, toasturi) e efemer. */
+export interface Durable {
+  mode: Mode;
+  chain: Chain;
+  /** numerarul DEMO liber, în $; nu coboară niciodată sub 0 */
+  cashUsd: number;
+  /** capitalul de pornire, în $: baza pentru riscul zilnic și plafoane */
+  bankrollUsd: number;
+  rules: Rule[];
+  ideas: Idea[];
+  trades: Trade[];
+  orders: LimitOrder[];
+  alerts: PriceAlert[];
+  settings: Settings;
+  tokens: Token[];
+  selectedId: string | null;
+  watchlist: string[];
+  tracked: TrackedWallet[];
+  /** de câte ori a intervenit frâna la o cumpărare */
+  brakeHits: number;
+  /** ziua în care bannerul Anti-Tilt a fost ascuns */
+  tiltHiddenDay: string | null;
 }

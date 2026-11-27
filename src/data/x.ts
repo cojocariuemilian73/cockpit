@@ -4,22 +4,29 @@
 // - altfel, un feed DEMO cu conturi inventate, marcat clar. Nu imităm conturi reale.
 
 import type { Token, Tweet } from "../domain/types";
-
-export type XMode = "ca" | "ticker" | "kol";
+import { hash, seeded } from "../domain/rng";
+import type { SocialFeedAdapter, XMode } from "./adapters";
+import { walletActivity, walletsAreDemo } from "./wallets";
 
 const PROXY = import.meta.env.VITE_X_PROXY as string | undefined;
 
-export const xIsDemo = !PROXY;
+/** Postările se păstrează limitat: feed-ul nu crește la nesfârșit în memorie. */
+const MAX_TWEETS = 40;
 
-export async function xFeed(t: Token, mode: XMode, others: Token[]): Promise<Tweet[]> {
-  if (PROXY) {
-    const q = mode === "ca" ? t.ca : `$${t.symbol}`;
-    const res = await fetch(`${PROXY}/search?q=${encodeURIComponent(q)}&mode=${mode}`);
-    if (!res.ok) throw new Error(`X proxy ${res.status}`);
-    return res.json();
-  }
-  return demoFeed(t, mode, others);
-}
+export const socialFeed: SocialFeedAdapter = {
+  demo: !PROXY,
+  async feed(t, mode, others, now) {
+    if (PROXY) {
+      const q = mode === "ca" ? t.ca : `$${t.symbol}`;
+      const res = await fetch(`${PROXY}/search?q=${encodeURIComponent(q)}&mode=${mode}`);
+      if (!res.ok) throw new Error(`X proxy ${res.status}`);
+      return ((await res.json()) as Tweet[]).slice(0, MAX_TWEETS);
+    }
+    return demoFeed(t, mode, others, now);
+  },
+  wallets: walletActivity,
+  walletsDemo: walletsAreDemo,
+};
 
 // ---------- feed demo ----------
 
@@ -32,15 +39,6 @@ const AUTHORS = [
   { name: "Late Entry (demo)", handle: "demo_late", verified: false, kol: false },
 ];
 
-function seeded(seed: number) {
-  let s = seed >>> 0 || 1;
-  return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32);
-}
-function hash(str: string) {
-  let h = 2166136261;
-  for (const ch of str) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
-  return h >>> 0;
-}
 
 const short = (ca: string) => `${ca.slice(0, 6)}…${ca.slice(-4)}`;
 
@@ -58,9 +56,8 @@ function lines(t: Token, mode: XMode): string[] {
   ];
 }
 
-function demoFeed(t: Token, mode: XMode, others: Token[]): Tweet[] {
+function demoFeed(t: Token, mode: XMode, others: Token[], now: number): Tweet[] {
   const r = seeded(hash(t.id + mode));
-  const now = Date.now();
   const pool = mode === "kol" ? AUTHORS.filter((a) => a.kol) : AUTHORS;
   const texts = lines(t, mode);
   const out: Tweet[] = [];

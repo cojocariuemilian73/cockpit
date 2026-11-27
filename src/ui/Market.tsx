@@ -1,8 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Bell, Trash2 } from "lucide-react";
-import type { PriceAlert, TapeTrade, Token } from "../domain/types";
-import { fmtUsd } from "../domain/rules";
-import { market } from "../data/market";
+import type { PriceAlert, Token } from "../domain/types";
 
 /** Distribuția deținătorilor: o singură bară, o singură nuanță, mai închis = mai concentrat. */
 export function Holders({ token }: { token: Token }) {
@@ -33,65 +31,6 @@ export function Holders({ token }: { token: Token }) {
         ))}
       </ul>
     </div>
-  );
-}
-
-function ago(ts: number) {
-  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  return `${Math.floor(s / 3600)}h`;
-}
-
-/** Tranzacțiile recente. Închis implicit: banda care curge e un declanșator de FOMO, o deschizi când ai nevoie. */
-export function Tape({ token }: { token: Token }) {
-  const [open, setOpen] = useState(false);
-  const [rows, setRows] = useState<TapeTrade[] | null>(null);
-  const [err, setErr] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    let stop = false;
-    setRows(null);
-    const load = async () => {
-      try {
-        const r = await market.tape(token);
-        if (!stop) { setRows(r); setErr(false); }
-      } catch { if (!stop) setErr(true); }
-    };
-    load();
-    const id = window.setInterval(load, 20_000);
-    return () => { stop = true; window.clearInterval(id); };
-  }, [open, token.id]);
-
-  const buys = rows?.filter((r) => r.side === "buy").reduce((s, r) => s + r.usd, 0) ?? 0;
-  const sells = rows?.filter((r) => r.side === "sell").reduce((s, r) => s + r.usd, 0) ?? 0;
-
-  return (
-    <details className="tape" onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
-      <summary>
-        Tranzacții recente
-        {rows && <span className="num dim tape-sum"><span className="pos">{fmtUsd(buys)}</span> / <span className="neg">{fmtUsd(sells)}</span></span>}
-      </summary>
-      {err && <p className="dim small">Nu răspunde acum (limită de cereri). Reîncerc în 20 s.</p>}
-      {!rows && !err && <p className="dim small">Se încarcă…</p>}
-      {rows && (
-        <table className="tape-table">
-          <thead><tr><th>când</th><th>tip</th><th className="r">sumă</th><th className="r">preț</th><th className="r">portofel</th></tr></thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} className={r.usd >= 1000 ? "big" : ""}>
-                <td className="num dim">{ago(r.ts)}</td>
-                <td className={r.side === "buy" ? "pos" : "neg"}>{r.side === "buy" ? "cumpărare" : "vânzare"}</td>
-                <td className="num r">{fmtUsd(r.usd)}</td>
-                <td className="num r dim">{r.priceUsd.toPrecision(4)}</td>
-                <td className="num r dim">{r.wallet.slice(0, 4)}…{r.wallet.slice(-3)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </details>
   );
 }
 

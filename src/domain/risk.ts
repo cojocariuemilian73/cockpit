@@ -1,4 +1,4 @@
-// Scorul de risc 1–10 și frâna anti-FOMO. Funcții pure, peste verificările regulilor.
+// Scorul de risc 1–10. Funcție pură, peste verificările regulilor. Frâna care îl folosește e în brake.ts.
 
 import type { Check, Token } from "./types";
 
@@ -9,15 +9,7 @@ export interface RiskView {
   reasons: string[];
 }
 
-export interface FomoBrake {
-  active: boolean;
-  /** cât trebuie ținut butonul apăsat, în ms */
-  holdMs: number;
-  reasons: string[];
-}
-
-export const FOMO_PUMP_5M_PCT = 200;
-export const FOMO_RISK_SCORE = 7;
+export const HIGH_RISK_SCORE = 7;
 
 export function riskScore(t: Token, checks: Check[]): RiskView {
   let pts = 0;
@@ -45,13 +37,4 @@ export function riskScore(t: Token, checks: Check[]): RiskView {
 
   const score = Math.max(1, Math.min(10, Math.round(1 + pts)));
   return { score, level: score >= 7 ? "ridicat" : score >= 4 ? "mediu" : "scăzut", reasons };
-}
-
-/** Frâna anti-FOMO: pompare bruscă sau risc mare → confirmare de 2 s cu motivul pe ecran. */
-export function fomoBrake(t: Token, risk: RiskView): FomoBrake {
-  const reasons: string[] = [];
-  const m5 = t.change5mPct ?? 0;
-  if (m5 > FOMO_PUMP_5M_PCT) reasons.push(`A crescut ${Math.round(m5)}% în ultimele 5 minute. De obicei aici intră ultimii.`);
-  if (risk.score >= FOMO_RISK_SCORE) reasons.push(`Scor de risc ${risk.score}/10: ${risk.reasons.slice(0, 2).join(", ")}.`);
-  return { active: reasons.length > 0, holdMs: reasons.length ? 2000 : 1000, reasons };
 }

@@ -1,61 +1,75 @@
-# Cockpit — arhitectura MVP
+# Cockpit — arhitectura
 
-Un ecran, trei zone. Regulile utilizatorului sunt date. Un motor pur (`src/domain/rules.ts`) le transformă în starea ecranului.
+Un ecran (100vh, 3 coloane), un motor pur, margini subțiri. Regulile utilizatorului sunt date; motorul le transformă în decizii explicabile.
+Totul rulează pe hârtie (DEMO, 10 SOL). LIVE e doar **pregătit** pentru wallet/RPC: nu există portofel conectat și nicio execuție reală.
 
 ```
 src/
-  domain/        logica, fără React; se poate muta pe server neschimbată
-    types.ts       schema: Token (rețea, social, RugCheck), Rule, Trade + Thesis, ordine, alerte, Tweet, portofele urmărite
-    rules.ts       evaluateToken · evaluateSession · sizeCeilingUsd · buyGate
-    risk.ts        scor de risc 1–10 · frâna anti-FOMO (+200% în 5 min sau risc ≥ 7 → 2 s ținut apăsat)
-    *.test.ts      cooldown, câmp lipsă, plafon, teză, ieșiri, risc, frână
-  data/
-    market.ts      fațada: lookup, search, refresh, enrich, rugcheck, radar, candles, tape (demo sau live)
-    live.ts        DexScreener + GeckoTerminal + RugCheck, pe Solana / Base / BNB; cozi + cache + pauză la 429
-    x.ts           feed X: proxy propriu (VITE_X_PROXY) sau DEMO cu conturi inventate
-    wallets.ts     Wallet Tracker: proxy indexer (VITE_WALLET_PROXY) sau DEMO
-    mock.ts        tokenuri demo, istoric și tranzacții simulate
+  domain/          motorul pur: fără React, fără Date.now / Math.random / localStorage / rețea
+    types.ts         schema: Token, Rule, Trade (+ auto2x, recovered, entryMove, brakeReasons, note), Settings, Durable
+    rules.ts         evaluateToken · evaluateSession · sizeCeilingUsd · formatare (fără NaN în afișare)
+    risk.ts          scor de risc 1–10
+    brake.ts         assessBuy → BrakeDecision (frâna asimetrică) · needsSellConfirm
+    tilt.ts          consecutiveLosses · entriesInWindow (Burst Cadence) · antiTilt
+    signals.ts       contractVerdict · traction (5m) · xSignal · filterTokens · filterTweets · lessons
+    invariants.ts    badValues (NaN / Infinity / null) · checkInvariants (balanță ≥ 0, cantități, registrul numerarului)
+    schema.ts        exportDurable · parseImport (validare strictă, apoi invariante)
+    rng.ts           generator cu seed + hash: piața demo e reproductibilă
+    defaults.ts      reguli, setări, presetări Turbo / Normal / Safe, DEMO_SOL = 10
+    fixtures.ts      date fixe pentru teste
   execution/
-    executor.ts    hârtie: cumpărare, vânzare parțială, TP parțial → trailing → SL → timp; alunecare, prioritate, platformFeeBps
+    executor.ts      quoteBuy (sumă netă, taxă, comision, impact) · sellPart (limitat la 100%, praful se închide)
+                     applyExitPlan: 2x Auto-Breakeven → TP parțial → stop / trailing → timp · avgEntry
+  data/            marginile: rețea
+    adapters.ts      contractele MarketDataAdapter · SecurityAdapter · SocialFeedAdapter
+    market.ts        marketData (DexScreener + GeckoTerminal + demo) · security (GeckoTerminal + RugCheck)
+    x.ts             socialFeed: proxy X (VITE_X_PROXY) sau feed DEMO cu conturi inventate; include Wallet Tracker
+    live.ts · mock.ts · wallets.ts   sursele propriu-zise (cache limitat la 300 de intrări)
   store/
-    cockpit.ts     reducer + localStorage; rețea, prețuri native, portofel de hârtie, ordine, alerte
-  ui/              un singur ecran 100vh
-    Header.tsx       logo, rețea, căutare CA/$TICKER (lipire = încărcare), preț nativ + prioritate, sesiune, portofel
-    RadarColumn.tsx  stânga: New Pairs / Trending / Wallet Tracker, filtre No Mint · LP · Top10 · Has X, scor de risc pe rând
-    TokenStrip.tsx   centru sus: nume, copiere CA, MC, Liq, Vol 1h, insigne de securitate
-    Chart.tsx        centru: lumânări, linii de intrare/TP/stop/limită, markere C/V
-    BottomPanel.tsx  centru jos: Poziții · Ordine limită · Istoric · Tranzacții · Holderi · Alerte
-    SwapPanel.tsx    dreapta sus: BUY/SELL, sume native, slippage, prioritate, Auto TP, Frâna (risc, reguli, teză)
-    XFeed.tsx        dreapta jos: CA Mentions · $TICKER · KOLs, Quick Buy care trece prin frână
-    RulesPanel / Portfolio / SettingsPanel   sertarul (R / P / S)
-    Overlays.tsx     notificări, scurtături, portofelul simulat
+    cockpit.ts       reducer PUR (ora vine în acțiuni, aleatorul din `seed`, id-urile din `seq`) + hook-ul cu marginile
+  ui/              doar afișare; fiecare zonă are error boundary propriu (Boundary.tsx)
+    Header           DEMO / LIVE, rețea, căutare (/ și Esc), starea datelor, Live Tick, Focus, Reset (Undo), Export / Import
+    RadarColumn      New Pairs · Trending · Watchlist (stea) · Wallet Tracker; filtre, contor, Reset filtre, % pe 1h
+    TokenStrip + Answers   contract Curat/Atenție/Pericol · tracțiune 5m · semnal X
+    Chart            lumânări (încărcare dinamică) + fallback SVG; Avg Entry, TP, 2x, stop, limită; markere C / V / 2x
+    BottomPanel      Poziții Active (toggle 2x, Sell 100% confirmat) · Istoric & Lecții · Alerte & Auto-2x · Tranzacții · Holderi
+    SwapPanel        presetări + Advanced, sume 1–4, linia de previzualizare, BrakeDecision, confirmarea frânei
+    XFeed            filtru text, etichetă de semnal, Quick Buy doar pe mențiunile de CA (trece prin frână)
+    Overlays         toast cu Undo, banner Anti-Tilt, scurtături, portofel DEMO/LIVE
 ```
 
-## Principii
+## Contractul BrakeDecision
 
-- **Starea nu se salvează, se calculează.** Cooldown-ul, trade-urile rămase și riscul rezultă mereu din `trades` și `rules`. Dacă modifici o regulă, ecranul se schimbă imediat.
-- **O valoare lipsă nu trece niciodată.** Dacă lipsesc datele, verificarea e `unknown` și cere confirmare.
-- **Frâna nu se slăbește din mers.** În cooldown sau la limită, regulile de sesiune devin doar pentru citire.
-- **Ieșirea e mereu liberă.** Doar cumpărarea are frână.
-- **Fiecare trade păstrează un instantaneu** cu verificările de la intrare, teza și eticheta ei, plus dacă ai confirmat atenționările. Din ele se fac statisticile Pro.
+`assessBuy(input)` întoarce `{ triggered, severity: none|caution|high|block, reasons[], recommendedAction: proceed|confirm|reduce|wait, requiresConfirmation, snapshotPrice, requote, move }`, plus verificările, scorul de risc, cotația și plafonul. UI-ul îl afișează; reducerul îl recalculează la execuție. Motive:
 
-## Ce e deja real (27.11)
-- Prețuri, lichiditate, market cap, vârstă și raportul de cumpărări vin de la DexScreener. Holderii, top 10, distribuția și autoritățile de mint/freeze vin de la GeckoTerminal. Tot de la GeckoTerminal vin lumânările, tranzacțiile și radarul.
-- RugCheck (gratuit, Solana) aduce autoritățile mint/freeze, LP blocat/ars și riscurile; filtrele din radar îl folosesc pe rând.
-- Dev-ul și bundle-ul nu au sursă gratuită: rămân „lipsesc datele” și cer confirmare. Le poate aduce un analizor propriu pe lanț.
-- Limita GeckoTerminal (planul gratuit) se atinge după câteva reîncărcări. În producție: cheie CoinGecko sau un backend propriu cu cache comun.
+- **blochează:** fără token / preț, mod LIVE, sumă invalidă, balanță insuficientă, cooldown, sesiune închisă, plafon, teză scurtă, regulă critică, impact peste alunecare.
+- **cere confirmare:** spike pe 5 min (pragul e reglabil), risc ≥ 7, impact ≥ 1% / 3%, lichiditate necunoscută, date mai vechi decât `staleSec`, preț mutat față de previzualizare, Anti-Tilt (≥ 3 pierderi), Burst Cadence, atenționări din reguli.
+- **vânzarea nu trece prin frână.** Doar Sell 100% pe o poziție ≥ `bigPositionPct` din capital cere o confirmare vizibilă.
 
-## Ce are în plus față de un terminal clasic
-- Ordinul limită trece din nou prin reguli când se declanșează (cooldown, limite, teză).
-- Stopul unei poziții se poate doar strânge, niciodată lărgi.
-- Tranzacțiile recente sunt închise implicit, radarul arată doar ce trece de regulile critice, iar lista nu arată % de creștere.
-- Cumpărarea nu are scurtătură de tastatură.
+## Execuția în doi pași
 
-## De la mock la real (în ordine)
+1. Ținut apăsat → `buy { nonce, tokenId, snapshotPrice }`. Același nonce de două ori e ignorat. Tokenul schimbat înseamnă că nu se execută nimic.
+2. Dacă frâna cere confirmare, `eph.confirm` primește un id. `confirmBuy { id }` reevaluează totul. Un id vechi sau un dublu click nu fac nimic. Dacă prețul s-a mișcat peste `requotePct` sau suma s-a schimbat, apare o confirmare nouă, la prețul nou.
 
-1. Dev/bundle/insideri: un API mic peste un analizor propriu pe lanț (bundle, dev, insideri) sau Birdeye. Cheile stau pe server.
-2. Persistență: Supabase cu tabelele `rules`, `ideas`, `trades` (`checks_at_entry` jsonb), `profiles` (`bankroll`, `plan`) și RLS pe `user_id`. `buyGate` rulează și pe server înainte de orice execuție.
-3. Execuție live (doar după ce o strategie se dovedește pe date noi): o cotație Jupiter, iar tranzacția o semnează portofelul utilizatorului. Comisionul se încasează prin `platformFeeBps`, din Jupiter `platformFee`.
-4. Pro: statistici pe `thesis.tag`, pe trade-urile cu atenționări acceptate și pe ora zilei. Planul Pro poate avea și cooldown strict, pe care utilizatorul nu-l poate dezactiva în aceeași zi.
+## Starea
 
-Pornire: `npm run dev` (port 5190) · teste: `npm test`.
+- **Durabilă** (`Durable`), salvată în `localStorage` (`cockpit.v4`, în același format ca exportul): mod, rețea, numerar, capital, reguli, idei, trade-uri, ordine, alerte, setări, tokenuri, watchlist, portofele urmărite, `brakeHits`, `tiltHiddenDay`. La pornire trece prin aceeași validare ca un import.
+- **Efemeră** (`eph`): confirmarea de cumpărare, Sell 100% în așteptare, filtrele radarului, filtrul X, Undo, ultimul nonce. Se curăță la schimbarea tokenului (confirmările), a rețelei, la Reset Demo și la Import.
+- **Numerarul urmează registrul:** `cash = capital − Σ intrări + Σ încasări`. E verificat ca invariant după fiecare acțiune din testul cu 400 de pași aleatori.
+
+## Principii păstrate
+
+- O valoare lipsă nu trece niciodată (verificare `unknown` → confirmare; filtrele din radar o resping).
+- Stopul se poate doar strânge. După TP sau 2x, stopul merge la intrare sau devine trailing.
+- Cooldown, limite de sesiune și teză obligatorie, recalculate mereu din trade-uri.
+- Cumpărarea nu are scurtătură de tastatură; tastele 1–4 doar aleg suma.
+
+## Ce rămâne simulat
+
+- Execuția: pe hârtie, cu alunecarea ca cost maxim. LIVE nu are portofel, RPC sau semnare.
+- Tokenurile demo, istoricul și banda lor: generate din seed.
+- Feed-ul X și Wallet Tracker: DEMO, cu conturi inventate, până la un proxy propriu.
+- Dev și bundle: fără sursă gratuită (rămân „lipsesc datele”).
+- Numerarul DEMO e ținut în $; afișarea în SOL urmează prețul SOL (10 SOL exact la pornire și la Reset).
+
+Pornire: `npm run dev` (port 5190) · teste: `npm test` (51) · publicare: `npm run deploy`.

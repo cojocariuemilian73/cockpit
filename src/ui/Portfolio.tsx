@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Download } from "lucide-react";
 import type { Token, Trade } from "../domain/types";
 import { fmtUsd } from "../domain/rules";
@@ -52,8 +51,7 @@ function exportCsv(trades: Trade[]) {
   URL.revokeObjectURL(a.href);
 }
 
-export function Portfolio({ trades, tokens, bankrollUsd, onBankroll }: { trades: Trade[]; tokens: Token[]; bankrollUsd: number; onBankroll: (v: number) => void }) {
-  const [edit, setEdit] = useState(String(bankrollUsd));
+export function Portfolio({ trades, tokens, cashUsd, bankrollUsd, equityUsd }: { trades: Trade[]; tokens: Token[]; cashUsd: number; bankrollUsd: number; equityUsd: number }) {
   const closed = trades.filter((t) => t.closedAt !== undefined);
   const open = trades.filter((t) => t.closedAt === undefined);
   const realized = closed.reduce((s, t) => s + (t.pnlUsd ?? 0), 0);
@@ -70,14 +68,11 @@ export function Portfolio({ trades, tokens, bankrollUsd, onBankroll }: { trades:
   return (
     <div className="panel-body">
       <section className="group">
-        <h3>Cont pe hârtie</h3>
+        <h3>Cont DEMO</h3>
         <dl className="kv">
-          <div><dt>Capital de pornire</dt><dd>
-            <form onSubmit={(e) => { e.preventDefault(); const v = parseFloat(edit); if (v > 0) onBankroll(v); }}>
-              <input className="num-in num wide" value={edit} inputMode="decimal" onChange={(e) => setEdit(e.target.value)} aria-label="Capital de pornire" onBlur={() => { const v = parseFloat(edit); if (v > 0) onBankroll(v); }} /> $
-            </form>
-          </dd></div>
-          <div><dt>Valoare acum</dt><dd className="num">{fmtUsd(bankrollUsd + realized + unrealized)}</dd></div>
+          <div><dt>Capital de pornire</dt><dd className="num">{fmtUsd(bankrollUsd)}</dd></div>
+          <div><dt>Numerar liber</dt><dd className="num">{fmtUsd(cashUsd)}</dd></div>
+          <div><dt>Valoare acum</dt><dd className="num">{fmtUsd(equityUsd)}</dd></div>
           <div><dt>În poziții</dt><dd className="num">{fmtUsd(inPositions)}</dd></div>
           <div><dt>Realizat</dt><dd><Signed v={realized} /></dd></div>
           <div><dt>Nerealizat</dt><dd><Signed v={unrealized} /></dd></div>
