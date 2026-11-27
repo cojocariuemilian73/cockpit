@@ -29,22 +29,22 @@ function make(sym: string, name: string, price: number, vol: number, t: Omit<Tok
 
 const WATCH: Token[] = [
   make("PUFF", "Puff the Dragon", 0.001284, 0.012, {
-    change1hPct: 6.4,
+    change1hPct: 6.4, change5mPct: 0.8, socials: { x: "https://x.com/demo" },
     metrics: { liquidityUsd: 182_000, mcapUsd: 1_420_000, ageMin: 380, holders: 2840, top10Pct: 18, devHoldPct: 0, bundlePct: 3, buyRatioPct: 61 },
     flags: { mintRenounced: true, freezeRenounced: true, lpBurned: true },
   }),
   make("GRUB", "Grub", 0.000261, 0.02, {
-    change1hPct: 38.2,
+    change1hPct: 38.2, change5mPct: 12, socials: { telegram: "https://t.me/demo" },
     metrics: { liquidityUsd: 64_000, mcapUsd: 260_000, ageMin: 22, holders: 610, top10Pct: 34, devHoldPct: 2.5, bundlePct: 9, buyRatioPct: 55 },
     flags: { mintRenounced: true, freezeRenounced: true, lpBurned: false },
   }),
   make("ZAPZ", "Zapzeke", 0.0000418, 0.035, {
-    change1hPct: 212,
+    change1hPct: 212, change5mPct: 240,
     metrics: { liquidityUsd: 12_400, mcapUsd: 41_800, ageMin: 9, holders: 140, top10Pct: 58, devHoldPct: 11, bundlePct: 27, buyRatioPct: 72 },
     flags: { mintRenounced: true, freezeRenounced: false, lpBurned: false },
   }),
   make("OTTO", "Otto the Otter", 0.00733, 0.015, {
-    change1hPct: -4.1,
+    change1hPct: -4.1, change5mPct: -0.6, socials: { x: "https://x.com/demo" },
     metrics: { liquidityUsd: 96_000, mcapUsd: 7_330_000, ageMin: 2900, top10Pct: 22, devHoldPct: 0, buyRatioPct: 48 },
     flags: { mintRenounced: true, freezeRenounced: true },
   }),

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { createChart, CrosshairMode, LineStyle, type IChartApi, type IPriceLine, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
+import { createChart, CrosshairMode, LineStyle, type IChartApi, type IPriceLine, type ISeriesApi, type SeriesMarker, type UTCTimestamp } from "lightweight-charts";
 import type { LimitOrder, Token, Trade } from "../domain/types";
 import { market, type Timeframe } from "../data/market";
 import { stopPrice, tpPrice } from "../execution/executor";
@@ -38,6 +38,12 @@ export function Chart({ token, trades, orders }: { token: Token; trades: Trade[]
     series.current = c.addCandlestickSeries({
       upColor: css("--pass"), downColor: css("--fail"), borderVisible: false,
       wickUpColor: css("--pass"), wickDownColor: css("--fail"),
+      // prețul nu coboară sub zero: axa nu arată valori negative
+      autoscaleInfoProvider: (original: () => { priceRange: { minValue: number; maxValue: number } } | null) => {
+        const r = original();
+        if (r?.priceRange) r.priceRange.minValue = Math.max(0, r.priceRange.minValue);
+        return r;
+      },
     });
     chart.current = c;
     return () => { c.remove(); chart.current = undefined; series.current = undefined; lines.current = []; };
@@ -91,11 +97,26 @@ export function Chart({ token, trades, orders }: { token: Token; trades: Trade[]
     for (const t of trades) {
       if (t.tokenId !== token.id || t.closedAt !== undefined) continue;
       add(t.entryPrice, "intrare", css("--text-2"), LineStyle.Solid);
-      if (!t.tpHit) add(tpPrice(t), "TP", css("--pass"));
+      if (!t.tpHit && t.tpPct < 1e6) add(tpPrice(t), "TP", css("--pass"));
       add(stopPrice(t), t.tpHit ? "stop" : "SL", css("--fail"));
     }
     for (const o of orders) if (o.tokenId === token.id && o.status === "open") add(o.triggerPrice, "limită", css("--focus"), LineStyle.Dotted);
   }, [trades, orders, token.id, state]);
+
+  // markere de cumpărare și vânzare pe lumânări
+  useEffect(() => {
+    const s = series.current;
+    if (!s || state !== "ok") return;
+    const step = TF_SEC[tf];
+    const at = (ms: number) => (Math.floor(ms / 1000 / step) * step) as UTCTimestamp;
+    const marks: SeriesMarker<UTCTimestamp>[] = [];
+    for (const t of trades) {
+      if (t.tokenId !== token.id) continue;
+      marks.push({ time: at(t.openedAt), position: "belowBar", shape: "arrowUp", color: css("--pass"), text: "C" });
+      if (t.closedAt !== undefined) marks.push({ time: at(t.closedAt), position: "aboveBar", shape: "arrowDown", color: css("--fail"), text: "V" });
+    }
+    s.setMarkers(marks.sort((a, b) => a.time - b.time));
+  }, [trades, token.id, state, tf]);
 
   return (
     <section className="chart" aria-label={`Grafic ${token.symbol}`}>

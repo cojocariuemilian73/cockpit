@@ -5,31 +5,30 @@ Un ecran, trei zone. Regulile utilizatorului sunt date. Un motor pur (`src/domai
 ```
 src/
   domain/        logica, fără React; se poate muta pe server neschimbată
-    types.ts       schema: Token, Rule (metric | flag | session | exit), Trade + Thesis, Check, SessionView, BuyGate
+    types.ts       schema: Token (rețea, social, RugCheck), Rule, Trade + Thesis, ordine, alerte, Tweet, portofele urmărite
     rules.ts       evaluateToken · evaluateSession · sizeCeilingUsd · buyGate
-    defaults.ts    regulile de pornire, mărimile predefinite
-    rules.test.ts  cooldown, câmp lipsă, plafon după pierdere, teză
+    risk.ts        scor de risc 1–10 · frâna anti-FOMO (+200% în 5 min sau risc ≥ 7 → 2 s ținut apăsat)
+    *.test.ts      cooldown, câmp lipsă, plafon, teză, ieșiri, risc, frână
   data/
-    market.ts      fațada: lookup, search, refresh, enrich, radar, candles, tape (demo sau live)
-    live.ts        DexScreener (preț, lichiditate, căutare) + GeckoTerminal (lumânări, tranzacții, holderi, autorități, pool-uri noi/trend); coadă + cache + pauză la 429
+    market.ts      fațada: lookup, search, refresh, enrich, rugcheck, radar, candles, tape (demo sau live)
+    live.ts        DexScreener + GeckoTerminal + RugCheck, pe Solana / Base / BNB; cozi + cache + pauză la 429
+    x.ts           feed X: proxy propriu (VITE_X_PROXY) sau DEMO cu conturi inventate
+    wallets.ts     Wallet Tracker: proxy indexer (VITE_WALLET_PROXY) sau DEMO
     mock.ts        tokenuri demo, istoric și tranzacții simulate
   execution/
-    executor.ts    paperBuy, sellPart, plan de ieșire (TP parțial → trailing/stop la intrare → SL → timp); alunecare, prioritate, platformFeeBps
+    executor.ts    hârtie: cumpărare, vânzare parțială, TP parțial → trailing → SL → timp; alunecare, prioritate, platformFeeBps
   store/
-    cockpit.ts     reducer + localStorage; ceas simulat; prețuri live la 5 s; ordine limită, alerte, notificări
-  ui/
-    TopBar.tsx       trade-uri rămase, risc zi, rezultat, Activ / Cooldown / Oprit
-    TokenPicker.tsx  CA + listă scurtă colorată după reguli (fără % de creștere)
-    TokenCard.tsx    antet, 5 cifre, verificări (încalcă / atenție / respectă)
-    Execution.tsx    teză + tip, mărimi, plan de ieșire, confirmare atenționări, buton „ține apăsat”
-    Positions.tsx    poziții deschise (Vinde nu se blochează) + jurnalul zilei
-    Chart.tsx        lumânări (lightweight-charts) cu liniile de intrare, TP, stop și ordine
-    Market.tsx       distribuția holderilor, tranzacții recente (închise implicit), alerte de preț
-    Radar.tsx        pool-uri noi / în trend, filtrate prin reguli; respinsele sunt doar un număr
-    RulesPanel.tsx   reguli în propoziții editabile, idei
-    Portfolio.tsx    cont pe hârtie, statistici pe tipul tezei / atenționări / ieșiri, export CSV
-    SettingsPanel.tsx alunecare, prioritate, expirare ordine, mărimi rapide, notificări, simulare
-    Overlays.tsx     notificări în pagină, lista de scurtături
+    cockpit.ts     reducer + localStorage; rețea, prețuri native, portofel de hârtie, ordine, alerte
+  ui/              un singur ecran 100vh
+    Header.tsx       logo, rețea, căutare CA/$TICKER (lipire = încărcare), preț nativ + prioritate, sesiune, portofel
+    RadarColumn.tsx  stânga: New Pairs / Trending / Wallet Tracker, filtre No Mint · LP · Top10 · Has X, scor de risc pe rând
+    TokenStrip.tsx   centru sus: nume, copiere CA, MC, Liq, Vol 1h, insigne de securitate
+    Chart.tsx        centru: lumânări, linii de intrare/TP/stop/limită, markere C/V
+    BottomPanel.tsx  centru jos: Poziții · Ordine limită · Istoric · Tranzacții · Holderi · Alerte
+    SwapPanel.tsx    dreapta sus: BUY/SELL, sume native, slippage, prioritate, Auto TP, Frâna (risc, reguli, teză)
+    XFeed.tsx        dreapta jos: CA Mentions · $TICKER · KOLs, Quick Buy care trece prin frână
+    RulesPanel / Portfolio / SettingsPanel   sertarul (R / P / S)
+    Overlays.tsx     notificări, scurtături, portofelul simulat
 ```
 
 ## Principii
@@ -42,7 +41,8 @@ src/
 
 ## Ce e deja real (27.11)
 - Prețuri, lichiditate, market cap, vârstă și raportul de cumpărări vin de la DexScreener. Holderii, top 10, distribuția și autoritățile de mint/freeze vin de la GeckoTerminal. Tot de la GeckoTerminal vin lumânările, tranzacțiile și radarul.
-- Dev-ul, bundle-ul și LP-ul ars nu au sursă gratuită: rămân „lipsesc datele” și cer confirmare. Le poate aduce un analizor propriu pe lanț.
+- RugCheck (gratuit, Solana) aduce autoritățile mint/freeze, LP blocat/ars și riscurile; filtrele din radar îl folosesc pe rând.
+- Dev-ul și bundle-ul nu au sursă gratuită: rămân „lipsesc datele” și cer confirmare. Le poate aduce un analizor propriu pe lanț.
 - Limita GeckoTerminal (planul gratuit) se atinge după câteva reîncărcări. În producție: cheie CoinGecko sau un backend propriu cu cache comun.
 
 ## Ce are în plus față de un terminal clasic

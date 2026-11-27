@@ -13,10 +13,12 @@ export type Metric =
 export type Flag = "mintRenounced" | "freezeRenounced" | "lpBurned";
 
 /** Un token așa cum îl vede cockpitul, indiferent de sursă (mock, GMGN, Birdeye, botul propriu). */
+export type Chain = "solana" | "base" | "bsc";
+
 export interface Token {
   id: string;
   ca: string;
-  chain: "solana";
+  chain: Chain;
   symbol: string;
   name: string;
   priceUsd: number;
@@ -32,7 +34,28 @@ export interface Token {
   volume1hUsd?: number;
   /** distribuția deținătorilor, în procente din supply */
   holdersDist?: { top10: number; r11_20: number; r21_40: number; rest: number };
+  change5mPct?: number;
+  socials?: { x?: string; telegram?: string; web?: string };
+  /** raportul RugCheck (doar Solana) */
+  rug?: { score: number; lpLockedPct?: number; risks: { name: string; level: string }[]; top10High: boolean };
 }
+
+export interface Tweet {
+  id: string;
+  author: { name: string; handle: string; verified: boolean; avatarSeed: string; kol: boolean };
+  text: string;
+  ts: number;
+  views: number;
+  likes: number;
+  /** contractul menționat în text, dacă există */
+  ca?: string;
+  chain?: Chain;
+  demo: boolean;
+}
+
+export interface TrackedWallet { address: string; label: string; addedAt: number }
+
+export interface WalletActivity { id: string; wallet: string; label: string; side: "buy" | "sell"; token: Token; usd: number; ts: number; demo: boolean }
 
 export interface Candle { time: number; open: number; high: number; low: number; close: number; volume: number }
 

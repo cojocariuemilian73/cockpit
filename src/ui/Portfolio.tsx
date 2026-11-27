@@ -3,7 +3,7 @@ import { Download } from "lucide-react";
 import type { Token, Trade } from "../domain/types";
 import { fmtUsd } from "../domain/rules";
 import { markToMarket } from "../execution/executor";
-import { REASON } from "./Positions";
+import { REASON } from "../store/cockpit";
 
 interface Group { key: string; n: number; wins: number; pnl: number }
 
